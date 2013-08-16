@@ -1,0 +1,11 @@
+---
+  irc_hostname: localhost
+  irc_nick: TheDisciple
+  irc_password: 
+  irc_port: 6667
+  irc_channels: ["#topiclogger"]
+  db_hostname: localhost
+  db_port: 3306
+  db_username: topiclogger
+  db_password: 
+  db_database: topiclogger
