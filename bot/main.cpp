@@ -31,6 +31,13 @@ char* _(const char* str)
 	return res;
 }
 
+char* s(MYSQL* con, const char* to)
+{
+	char* res = new char[2*strlen(to)+1];
+	mysql_real_escape_string(con, res, to, strlen(to));
+	return res;
+}
+
 void event_connect(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
 	printf("Connected to IRC\n");
@@ -103,7 +110,7 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		
 		// Load last topic from database
 		char* stmt = (char*) malloc(128*sizeof(char));
-		sprintf(stmt, "SELECT * FROM messages WHERE channel = \"%s\" AND type = \"subject\" ORDER BY timestamp DESC LIMIT 1", params[0]);
+		sprintf(stmt, "SELECT * FROM messages WHERE channel = \"%s\" AND type = \"subject\" ORDER BY timestamp DESC LIMIT 1", s(ctx->dbcon, params[0]));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
 			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
@@ -167,7 +174,7 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 		irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
 		
 		char* stmt = (char*) malloc(1024*sizeof(char));
-		sprintf(stmt, "INSERT INTO messages (type,who,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\")", origin, params[0], room->topic->c_str());
+		sprintf(stmt, "INSERT INTO messages (type,who,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
 			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
