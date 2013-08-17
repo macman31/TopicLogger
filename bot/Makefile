@@ -11,3 +11,6 @@ $(TARGET): $(MODULES)
 
 $(MODULES): %.o: %.cpp
 	$(CC) -c $? -o $@ $(CCFLAGS)
+
+clean:
+	rm -rf $(TARGET) $(MODULES)

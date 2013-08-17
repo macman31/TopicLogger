@@ -258,7 +258,19 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 
 void event_ctcp_action(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log action
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
+	char* stmt = (char*) malloc(1024*sizeof(char));
+	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"action\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
+	if (mysql_query(ctx->dbcon, stmt))
+	{
+		fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+		mysql_close(ctx->dbcon);
+		exit(1);
+	}
+	
+	free(stmt);
 }
 
 void event_channel_notice(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
