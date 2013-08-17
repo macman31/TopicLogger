@@ -153,13 +153,45 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		
 		ctx->channels[params[0]] = nroom;
 	} else {
+		// Log the join
+		char* stmt = (char*) malloc(256*sizeof(char));
+		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"join\",\"%s\",\"%s\",\"%s\",\"\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]));
+		if (mysql_query(ctx->dbcon, stmt))
+		{
+			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+			mysql_close(ctx->dbcon);
+			exit(1);
+		}
 		
+		free(stmt);
 	}
 }
 
 void event_part(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
-	
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
+	if (std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
+	{
+		// Log part, unless we parted
+		const char* reason;
+		if (count == 2)
+		{
+			reason = params[1];
+		} else {
+			reason = "";
+		}
+		
+		char* stmt = (char*) malloc(1024*sizeof(char));
+		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"part\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, reason));
+		if (mysql_query(ctx->dbcon, stmt))
+		{
+			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+			mysql_close(ctx->dbcon);
+			exit(1);
+		}
+		
+		free(stmt);
+	}
 }
 
 void event_mode(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
@@ -211,6 +243,16 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 		// NOTICE the user a link to the logs
 	} else {
 		// Log message
+		char* stmt = (char*) malloc(1024*sizeof(char));
+		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"privmsg\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
+		if (mysql_query(ctx->dbcon, stmt))
+		{
+			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+			mysql_close(ctx->dbcon);
+			exit(1);
+		}
+		
+		free(stmt);
 	}
 }
 
