@@ -11,6 +11,13 @@
 #include <map>
 #include <cstring>
 
+#define DB_COL_TYPE 1
+#define DB_COL_TIMESTAMP 2
+#define DB_COL_WHO 3
+#define DB_COL_RAW_NICK 4
+#define DB_COL_CHANNEL 5
+#define DB_COL_BODY 6
+
 typedef struct
 {
 	std::vector<std::string>* users;
@@ -35,6 +42,13 @@ char* s(MYSQL* con, const char* to)
 {
 	char* res = new char[2*strlen(to)+1];
 	mysql_real_escape_string(con, res, to, strlen(to));
+	return res;
+}
+
+char* stripnick(const char* origin)
+{
+	char* res = new char[128];
+	irc_target_get_nick(origin, res, 128);
 	return res;
 }
 
@@ -104,9 +118,11 @@ void event_quit(irc_session_t* session, const char* event, const char* origin, c
 void event_join(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
-	if (!std::string(origin).compare(ctx->config["irc_nick"].as<std::string>()))
+	if (!std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
 	{
 		irc_room_t* nroom = (irc_room_t*) malloc(sizeof(irc_room_t));
+		nroom->topic = 0;
+		nroom->users = new std::vector<std::string>();
 		
 		// Load last topic from database
 		char* stmt = (char*) malloc(128*sizeof(char));
@@ -129,7 +145,7 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		MYSQL_ROW row;
 		while (row = mysql_fetch_row(result))
 		{
-			nroom->topic = new std::string(row[5]);
+			nroom->topic = new std::string(row[DB_COL_BODY]);
 		}
 		
 		mysql_free_result(result);
@@ -165,7 +181,13 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 	{
 		// Print current topic
 		irc_room_t* room = ctx->channels[std::string(params[0])];
-		irc_cmd_msg(session, params[0], (std::string("The current topic is \"") + *room->topic + "\"").c_str());
+		
+		if (!room->topic)
+		{
+			irc_cmd_msg(session, params[0], "There is no topic currently set");
+		} else {
+			irc_cmd_msg(session, params[0], (std::string("The current topic is \"") + *room->topic + "\"").c_str());
+		}
 	} else if (!msg.substr(0, 7).compare(std::string("!topic ")))
 	{
 		// Change topic
@@ -175,7 +197,7 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 		irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
 		
 		char* stmt = (char*) malloc(1024*sizeof(char));
-		sprintf(stmt, "INSERT INTO messages (type,who,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
+		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
 			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
@@ -258,9 +280,6 @@ int main(int argc, char** args)
 		printf("Error creating session\n");
 		exit(1);
 	}
-	
-	// We don't want hostmasks in our nicks
-	irc_option_set(session, LIBIRC_OPTION_STRIPNICKS);
 	
 	// We need the list of users in each channel
 	irc_option_set(session, LIBIRC_RFC_RPL_NAMREPLY);
