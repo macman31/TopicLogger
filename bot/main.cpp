@@ -170,6 +170,7 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 	{
 		// Change topic
 		irc_room_t* room = ctx->channels[std::string(params[0])];
+		delete room->topic;
 		room->topic = new std::string(msg.substr(7));
 		irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
 		
@@ -192,6 +193,11 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 }
 
 void event_ctcp_action(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
+{
+	
+}
+
+void event_channel_notice(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
 	
 }
@@ -242,6 +248,7 @@ int main(int argc, char** args)
 	callbacks.event_kick = event_kick;
 	callbacks.event_channel = event_channel;
 	callbacks.event_ctcp_action = event_ctcp_action;
+	callbacks.event_channel_notice = event_channel_notice;
 	
 	// Create the session
 	irc_session_t* session = irc_create_session(&callbacks);
