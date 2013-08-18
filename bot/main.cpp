@@ -386,35 +386,37 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
 	std::string msg(params[1]);
-	if (!msg.compare(std::string("!topic")))
+	if (!msg.substr(0, 6).compare(std::string("!topic")))
 	{
-		// Print current topic
-		irc_room_t* room = ctx->channels[std::string(params[0])];
-		
-		if (!room->topic)
+		if (msg.length() <= 7)
 		{
-			irc_cmd_msg(session, params[0], "There is no topic currently set");
+			// Print current topic
+			irc_room_t* room = ctx->channels[std::string(params[0])];
+		
+			if (!room->topic)
+			{
+				irc_cmd_msg(session, params[0], "There is no topic currently set");
+			} else {
+				irc_cmd_msg(session, params[0], (std::string("The current topic is \"") + *room->topic + "\"").c_str());
+			}
 		} else {
-			irc_cmd_msg(session, params[0], (std::string("The current topic is \"") + *room->topic + "\"").c_str());
-		}
-	} else if (!msg.substr(0, 7).compare(std::string("!topic ")))
-	{
-		// Change topic
-		irc_room_t* room = ctx->channels[std::string(params[0])];
-		delete room->topic;
-		room->topic = new std::string(msg.substr(7));
-		irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
+			// Change topic
+			irc_room_t* room = ctx->channels[std::string(params[0])];
+			delete room->topic;
+			room->topic = new std::string(msg.substr(7));
+			irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
 		
-		char* stmt = (char*) malloc(1280*sizeof(char));
-		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
-		if (mysql_query(ctx->dbcon, stmt))
-		{
-			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
-			mysql_close(ctx->dbcon);
-			exit(1);
-		}
+			char* stmt = (char*) malloc(1280*sizeof(char));
+			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
+			if (mysql_query(ctx->dbcon, stmt))
+			{
+				fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+				mysql_close(ctx->dbcon);
+				exit(1);
+			}
 		
-		free(stmt);
+			free(stmt);
+		}
 	} else if (!msg.compare(std::string("!log")))
 	{
 		// NOTICE the user a link to the logs
