@@ -30,6 +30,7 @@ typedef struct
 	MYSQL* dbcon;
 	YAML::Node config;
 	std::map<std::string,irc_room_t*> channels;
+	std::string* nick;
 } irc_ctx_t;
 
 char* _(const char* str)
@@ -110,47 +111,62 @@ void event_numeric(irc_session_t* session, unsigned int event, const char* origi
 		printf("ERROR %d: %s: %s\n", event, origin ? origin : "?", fulltext.c_str());
 	} else if (event == LIBIRC_RFC_RPL_NAMREPLY)
 	{
-		// Userlist
+		// Userlist -- remember all users in all channels except for self
 		irc_room_t* room = ctx->channels[std::string(params[2])];
 		
 		std::string userlist(params[3]);
 		while (userlist.find(" ") != std::string::npos)
 		{
 			int pos = userlist.find(" ");
-			room->users->insert(stripstatus(userlist.substr(0, pos)));
+			std::string nick = stripstatus(userlist.substr(0, pos));
+			
+			if (ctx->nick->compare(nick))
+			{
+				room->users->insert(nick);
+			}
+			
 			userlist = userlist.substr(pos+1);
 		}
 		
-		room->users->insert(stripstatus(userlist));
+		if (ctx->nick->compare(userlist))
+		{
+			room->users->insert(stripstatus(userlist));
+		}
 	}
 }
 
 void event_nick(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
-	// Log nick change in all applicable channels
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
-	for (std::map<std::string,irc_room_t*>::iterator it = ctx->channels.begin(); it != ctx->channels.end(); ++it)
+	if (!ctx->nick->compare(std::string(stripnick(origin))))
 	{
-		irc_room_t* room = it->second;
-		
-		// Check if user is in channel
-		std::set<std::string>::iterator cuser = room->users->find(stripnick(origin));
-		if (cuser != room->users->end())
+		// Our own nick changed
+		ctx->nick = new std::string(params[0]);
+	} else {
+		// Log nick change in all applicable channels
+		for (std::map<std::string,irc_room_t*>::iterator it = ctx->channels.begin(); it != ctx->channels.end(); ++it)
 		{
-			room->users->erase(cuser);
-			room->users->insert(params[0]);
-			
-			char* stmt = (char*) malloc(1024*sizeof(char));
-			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"nick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, params[0]));
-			if (mysql_query(ctx->dbcon, stmt))
-			{
-				fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
-				mysql_close(ctx->dbcon);
-				exit(1);
-			}
+			irc_room_t* room = it->second;
 		
-			free(stmt);
+			// Check if user is in channel
+			std::set<std::string>::iterator cuser = room->users->find(stripnick(origin));
+			if (cuser != room->users->end())
+			{
+				room->users->erase(cuser);
+				room->users->insert(params[0]);
+			
+				char* stmt = (char*) malloc(1024*sizeof(char));
+				sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"nick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, params[0]));
+				if (mysql_query(ctx->dbcon, stmt))
+				{
+					fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+					mysql_close(ctx->dbcon);
+					exit(1);
+				}
+		
+				free(stmt);
+			}
 		}
 	}
 }
@@ -195,7 +211,7 @@ void event_quit(irc_session_t* session, const char* event, const char* origin, c
 void event_join(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
-	if (!std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
+	if (!ctx->nick->compare(std::string(stripnick(origin))))
 	{
 		// If the bot is the one joining, initialize the room
 		irc_room_t* nroom = (irc_room_t*) malloc(sizeof(irc_room_t));
@@ -253,7 +269,7 @@ void event_part(irc_session_t* session, const char* event, const char* origin, c
 {
 	// Log part, unless we parted
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
-	if (std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
+	if (!ctx->nick->compare(std::string(stripnick(origin))))
 	{
 		// Remove the user from the channel's userlist
 		irc_room_t* room = ctx->channels[std::string(params[0])];
@@ -313,7 +329,7 @@ void event_kick(irc_session_t* session, const char* event, const char* origin, c
 {
 	// Log the kick unless we just got kicked
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
-	if (std::string(stripnick(params[1])).compare(ctx->config["irc_nick"].as<std::string>()))
+	if (!ctx->nick->compare(std::string(stripnick(params[1]))))
 	{
 		const char* reason;
 		if (count == 3)
@@ -489,6 +505,7 @@ int main(int argc, char** args)
 	}
 	
 	ctx.dbcon = con;
+	ctx.nick = new std::string(irc_nick);
 
 	// Set up the IRC callbacks
 	irc_callbacks_t callbacks;
