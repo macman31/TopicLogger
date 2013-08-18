@@ -10,6 +10,7 @@
 #include <mysql.h>
 #include <map>
 #include <cstring>
+#include <set>
 
 #define DB_COL_TYPE 1
 #define DB_COL_TIMESTAMP 2
@@ -20,7 +21,7 @@
 
 typedef struct
 {
-	std::vector<std::string>* users;
+	std::set<std::string>* users;
 	std::string* topic;
 } irc_room_t;
 
@@ -50,6 +51,22 @@ char* stripnick(const char* origin)
 	char* res = new char[128];
 	irc_target_get_nick(origin, res, 128);
 	return res;
+}
+
+std::string stripstatus(std::string nick)
+{
+	switch (nick[0])
+	{
+		case '+':
+		case '%':
+		case '@':
+		case '!':
+		case '&':
+		case '~':
+			return stripstatus(nick.substr(1));
+		default:
+			return nick;
+	}
 }
 
 void event_connect(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
@@ -91,28 +108,85 @@ void event_numeric(irc_session_t* session, unsigned int event, const char* origi
 	} else if (event == LIBIRC_RFC_RPL_NAMREPLY)
 	{
 		// Userlist
-		/*irc_room_t* room = ctx->channels[std::string(params[2])];
+		irc_room_t* room = ctx->channels[std::string(params[2])];
 		
 		std::string userlist(params[3]);
 		while (userlist.find(" ") != std::string::npos)
 		{
 			int pos = userlist.find(" ");
-			room->users.push_back(userlist.substr(0, pos));
+			room->users->insert(stripstatus(userlist.substr(0, pos)));
 			userlist = userlist.substr(pos+1);
 		}
 		
-		room->users.push_back(userlist);*/
+		room->users->insert(stripstatus(userlist));
 	}
 }
 
 void event_nick(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log nick change in all applicable channels
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
+	for (std::map<std::string,irc_room_t*>::iterator it = ctx->channels.begin(); it != ctx->channels.end(); ++it)
+	{
+		irc_room_t* room = it->second;
+		
+		// Check if user is in channel
+		std::set<std::string>::iterator cuser = room->users->find(stripnick(origin));
+		if (cuser != room->users->end())
+		{
+			room->users->erase(cuser);
+			room->users->insert(params[0]);
+			
+			char* stmt = (char*) malloc(512*sizeof(char));
+			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"nick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, params[0]));
+			if (mysql_query(ctx->dbcon, stmt))
+			{
+				fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+				mysql_close(ctx->dbcon);
+				exit(1);
+			}
+		
+			free(stmt);
+		}
+	}
 }
 
 void event_quit(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log quit in all applicable channels
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
+	for (std::map<std::string,irc_room_t*>::iterator it = ctx->channels.begin(); it != ctx->channels.end(); ++it)
+	{
+		irc_room_t* room = it->second;
+		
+		// Check if user is in channel
+		std::set<std::string>::iterator cuser = room->users->find(stripnick(origin));
+		if (cuser != room->users->end())
+		{
+			room->users->erase(cuser);
+			
+			const char* reason;
+			if (count == 2)
+			{
+				reason = params[1];
+			} else {
+				reason = "";
+			}
+			
+			char* stmt = (char*) malloc(512*sizeof(char));
+			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"quit\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, reason));
+			if (mysql_query(ctx->dbcon, stmt))
+			{
+				fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+				mysql_close(ctx->dbcon);
+				exit(1);
+			}
+		
+			free(stmt);
+		}
+	}
 }
 
 void event_join(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
@@ -122,7 +196,7 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 	{
 		irc_room_t* nroom = (irc_room_t*) malloc(sizeof(irc_room_t));
 		nroom->topic = 0;
-		nroom->users = new std::vector<std::string>();
+		nroom->users = new std::set<std::string>();
 		
 		// Load last topic from database
 		char* stmt = (char*) malloc(128*sizeof(char));
@@ -153,6 +227,10 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		
 		ctx->channels[params[0]] = nroom;
 	} else {
+		// Add user to channel's userlist
+		irc_room_t* room = ctx->channels[std::string(params[0])];
+		room->users->insert(std::string(stripnick(origin)));
+		
 		// Log the join
 		char* stmt = (char*) malloc(256*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"join\",\"%s\",\"%s\",\"%s\",\"\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]));
@@ -173,6 +251,11 @@ void event_part(irc_session_t* session, const char* event, const char* origin, c
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	if (std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
 	{
+		// Remove the user from the channel's userlist
+		irc_room_t* room = ctx->channels[std::string(params[0])];
+		room->users->erase(room->users->find(std::string(stripnick(origin))));
+		
+		// Log the actual part
 		const char* reason;
 		if (count == 2)
 		{
@@ -427,9 +510,6 @@ int main(int argc, char** args)
 		printf("Error creating session\n");
 		exit(1);
 	}
-	
-	// We need the list of users in each channel
-	irc_option_set(session, LIBIRC_RFC_RPL_NAMREPLY);
 	
 	// We need to carry around our database connection and config
 	irc_set_ctx(session, &ctx);

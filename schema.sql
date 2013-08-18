@@ -1,6 +1,6 @@
 CREATE TABLE `messages` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `type` enum('privmsg','notice','join','part','cmode','quit','kick','topic','subject','action') NOT NULL,
+  `type` enum('privmsg','notice','join','part','cmode','quit','kick','topic','subject','action','nick') NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `who` varchar(255) NOT NULL,
   `raw_nick` varchar(255) NOT NULL,
