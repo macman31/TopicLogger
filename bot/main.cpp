@@ -169,10 +169,10 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 
 void event_part(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log part, unless we parted
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	if (std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
 	{
-		// Log part, unless we parted
 		const char* reason;
 		if (count == 2)
 		{
@@ -196,16 +196,90 @@ void event_part(irc_session_t* session, const char* event, const char* origin, c
 
 void event_mode(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log the mode change
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
+	std::string fulltext;
+	for (unsigned int i = 1; i < count; i++)
+	{
+		if (i > 1)
+		{
+			fulltext += " ";
+		}
+
+		fulltext += params[i];
+	}
+	
+	char* stmt = (char*) malloc(1024*sizeof(char));
+	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"cmode\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, fulltext.c_str()));
+	if (mysql_query(ctx->dbcon, stmt))
+	{
+		fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+		mysql_close(ctx->dbcon);
+		exit(1);
+	}
+	
+	free(stmt);
 }
 
 void event_kick(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Log the kick unless we just got kicked
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
+	if (std::string(stripnick(params[1])).compare(ctx->config["irc_nick"].as<std::string>()))
+	{
+		const char* reason;
+		if (count == 3)
+		{
+			reason = (std::string(params[1]) + std::string(" (") + std::string(params[2]) + std::string(")")).c_str();
+		} else {
+			reason = params[1];
+		}
+		
+		char* stmt = (char*) malloc(1024*sizeof(char));
+		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"kick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, reason));
+		if (mysql_query(ctx->dbcon, stmt))
+		{
+			fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+			mysql_close(ctx->dbcon);
+			exit(1);
+		}
+		
+		free(stmt);
+	}
+}
+
+void event_topic(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
+{
+	// Make sure there's actually a message attached
+	if (count < 2)
+	{
+		return;
+	}
 	
+	// Log topic
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
+	
+	char* stmt = (char*) malloc(1024*sizeof(char));
+	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"topic\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
+	if (mysql_query(ctx->dbcon, stmt))
+	{
+		fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+		mysql_close(ctx->dbcon);
+		exit(1);
+	}
+	
+	free(stmt);
 }
 
 void event_channel(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Make sure there's actually a message attached
+	if (count < 2)
+	{
+		return;
+	}
+	
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
 	std::string msg(params[1]);
@@ -275,7 +349,25 @@ void event_ctcp_action(irc_session_t* session, const char* event, const char* or
 
 void event_channel_notice(irc_session_t* session, const char* event, const char* origin, const char** params, unsigned int count)
 {
+	// Make sure there's actually a message attached
+	if (count < 2)
+	{
+		return;
+	}
 	
+	// Log message
+	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
+	
+	char* stmt = (char*) malloc(1024*sizeof(char));
+	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"notice\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
+	if (mysql_query(ctx->dbcon, stmt))
+	{
+		fprintf(stderr, "%s\n", mysql_error(ctx->dbcon));
+		mysql_close(ctx->dbcon);
+		exit(1);
+	}
+	
+	free(stmt);
 }
 
 int main(int argc, char** args)
@@ -322,6 +414,7 @@ int main(int argc, char** args)
 	callbacks.event_part = event_part;
 	callbacks.event_mode = event_mode;
 	callbacks.event_kick = event_kick;
+	callbacks.event_topic = event_topic;
 	callbacks.event_channel = event_channel;
 	callbacks.event_ctcp_action = event_ctcp_action;
 	callbacks.event_channel_notice = event_channel_notice;
