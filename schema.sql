@@ -5,6 +5,6 @@ CREATE TABLE `messages` (
   `who` varchar(255) NOT NULL,
   `raw_nick` varchar(255) NOT NULL,
   `channel` varchar(255) NOT NULL,
-  `body` varchar(255) NOT NULL,
+  `body` varchar(512) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8;

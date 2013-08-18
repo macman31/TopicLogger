@@ -76,8 +76,11 @@ void event_connect(irc_session_t* session, const char* event, const char* origin
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 
 	// Identify with NickServ
-	std::string password = ctx->config["irc_password"].as<std::string>();
-	irc_cmd_msg(session, "NickServ", (std::string("IDENTIFY ") + password).c_str());
+	if (!ctx->config["irc_password"].IsNull())
+	{
+		std::string password = ctx->config["irc_password"].as<std::string>();
+		irc_cmd_msg(session, "NickServ", (std::string("IDENTIFY ") + password).c_str());
+	}
 	
 	// Join channels
 	std::vector<std::string> channels = ctx->config["irc_channels"].as<std::vector<std::string> >();
@@ -138,7 +141,7 @@ void event_nick(irc_session_t* session, const char* event, const char* origin, c
 			room->users->erase(cuser);
 			room->users->insert(params[0]);
 			
-			char* stmt = (char*) malloc(512*sizeof(char));
+			char* stmt = (char*) malloc(1024*sizeof(char));
 			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"nick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, params[0]));
 			if (mysql_query(ctx->dbcon, stmt))
 			{
@@ -175,7 +178,7 @@ void event_quit(irc_session_t* session, const char* event, const char* origin, c
 				reason = "";
 			}
 			
-			char* stmt = (char*) malloc(512*sizeof(char));
+			char* stmt = (char*) malloc(1280*sizeof(char));
 			sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"quit\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, it->first.c_str()), s(ctx->dbcon, reason));
 			if (mysql_query(ctx->dbcon, stmt))
 			{
@@ -194,12 +197,13 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	if (!std::string(stripnick(origin)).compare(ctx->config["irc_nick"].as<std::string>()))
 	{
+		// If the bot is the one joining, initialize the room
 		irc_room_t* nroom = (irc_room_t*) malloc(sizeof(irc_room_t));
 		nroom->topic = 0;
 		nroom->users = new std::set<std::string>();
 		
 		// Load last topic from database
-		char* stmt = (char*) malloc(128*sizeof(char));
+		char* stmt = (char*) malloc(512*sizeof(char));
 		sprintf(stmt, "SELECT * FROM messages WHERE channel = \"%s\" AND type = \"subject\" ORDER BY timestamp DESC LIMIT 1", s(ctx->dbcon, params[0]));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -232,7 +236,7 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		room->users->insert(std::string(stripnick(origin)));
 		
 		// Log the join
-		char* stmt = (char*) malloc(256*sizeof(char));
+		char* stmt = (char*) malloc(768*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"join\",\"%s\",\"%s\",\"%s\",\"\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -264,7 +268,7 @@ void event_part(irc_session_t* session, const char* event, const char* origin, c
 			reason = "";
 		}
 		
-		char* stmt = (char*) malloc(1024*sizeof(char));
+		char* stmt = (char*) malloc(1280*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"part\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, reason));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -293,7 +297,7 @@ void event_mode(irc_session_t* session, const char* event, const char* origin, c
 		fulltext += params[i];
 	}
 	
-	char* stmt = (char*) malloc(1024*sizeof(char));
+	char* stmt = (char*) malloc(1280*sizeof(char));
 	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"cmode\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, fulltext.c_str()));
 	if (mysql_query(ctx->dbcon, stmt))
 	{
@@ -319,7 +323,7 @@ void event_kick(irc_session_t* session, const char* event, const char* origin, c
 			reason = params[1];
 		}
 		
-		char* stmt = (char*) malloc(1024*sizeof(char));
+		char* stmt = (char*) malloc(1280*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"kick\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, reason));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -343,7 +347,7 @@ void event_topic(irc_session_t* session, const char* event, const char* origin, 
 	// Log topic
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
-	char* stmt = (char*) malloc(1024*sizeof(char));
+	char* stmt = (char*) malloc(1280*sizeof(char));
 	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"topic\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
 	if (mysql_query(ctx->dbcon, stmt))
 	{
@@ -385,7 +389,7 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 		room->topic = new std::string(msg.substr(7));
 		irc_cmd_msg(session, params[0], (std::string("The topic has been changed to \"") + *room->topic + "\"").c_str());
 		
-		char* stmt = (char*) malloc(1024*sizeof(char));
+		char* stmt = (char*) malloc(1280*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"subject\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, room->topic->c_str()));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -400,7 +404,7 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 		// NOTICE the user a link to the logs
 	} else {
 		// Log message
-		char* stmt = (char*) malloc(1024*sizeof(char));
+		char* stmt = (char*) malloc(1280*sizeof(char));
 		sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"privmsg\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
 		if (mysql_query(ctx->dbcon, stmt))
 		{
@@ -418,7 +422,7 @@ void event_ctcp_action(irc_session_t* session, const char* event, const char* or
 	// Log action
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
-	char* stmt = (char*) malloc(1024*sizeof(char));
+	char* stmt = (char*) malloc(1280*sizeof(char));
 	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"action\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
 	if (mysql_query(ctx->dbcon, stmt))
 	{
@@ -441,7 +445,7 @@ void event_channel_notice(irc_session_t* session, const char* event, const char*
 	// Log message
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
-	char* stmt = (char*) malloc(1024*sizeof(char));
+	char* stmt = (char*) malloc(1280*sizeof(char));
 	sprintf(stmt, "INSERT INTO messages (type,who,raw_nick,channel,body) VALUES (\"notice\",\"%s\",\"%s\",\"%s\",\"%s\")", s(ctx->dbcon, stripnick(origin)), s(ctx->dbcon, origin), s(ctx->dbcon, params[0]), s(ctx->dbcon, params[1]));
 	if (mysql_query(ctx->dbcon, stmt))
 	{
