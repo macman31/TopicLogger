@@ -344,6 +344,12 @@ void event_channel(irc_session_t* session, const char* event, const char* origin
 	
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
 	
+	// Check that we are actually in the channel
+	if (ctx->channels.find(params[0]) == ctx->channels.end())
+	{
+		return;
+	}
+	
 	// Log message
 	log_message(ctx->dbcon, "privmsg", origin, params[0], params[1]);
 	
@@ -392,8 +398,15 @@ void event_channel_notice(irc_session_t* session, const char* event, const char*
 		return;
 	}
 	
-	// Log message
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
+	
+	// Check that we are actually in the channel
+	if (ctx->channels.find(params[0]) == ctx->channels.end())
+	{
+		return;
+	}
+	
+	// Log message
 	log_message(ctx->dbcon, "notice", origin, params[0], params[1]);
 }
 
