@@ -264,10 +264,13 @@ void event_join(irc_session_t* session, const char* event, const char* origin, c
 		free(stmt);
 		
 		// Send the new user a notice
-		char* msg = new char[512];
-		sprintf(msg, "Welcome to %s, %s. The current topic of discussion is \"%s\".\n", params[0], stripnick(origin), room->topic->c_str());
-		irc_cmd_notice(session, stripnick(origin), msg);
-		free(msg);
+		if (room->topic)
+		{
+			char* msg = new char[512];
+			sprintf(msg, "Welcome to %s, %s. The current topic of discussion is \"%s\".\n", params[0], stripnick(origin), room->topic->c_str());
+			irc_cmd_notice(session, stripnick(origin), msg);
+			free(msg);
+		}
 	}
 }
 
