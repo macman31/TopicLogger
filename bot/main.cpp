@@ -265,7 +265,7 @@ void event_part(irc_session_t* session, const char* event, const char* origin, c
 {
 	// Log part, unless we parted
 	irc_ctx_t* ctx = (irc_ctx_t*) irc_get_ctx(session);
-	if (!ctx->nick->compare(std::string(stripnick(origin))))
+	if (ctx->nick->compare(std::string(stripnick(origin))))
 	{
 		// Remove the user from the channel's userlist
 		irc_room_t* room = ctx->channels[std::string(params[0])];
